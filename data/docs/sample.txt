@@ -1,0 +1,2 @@
+﻿RAG to technika łącząca wyszukiwanie fragmentów dokumentów z generacją odpowiedzi przez model językowy.
+W tym projekcie odpowiedź ma być oparta tylko na danych znalezionych w dokumentach wskazanych przez użytkownika.
