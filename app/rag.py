@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable, List
-from uuid import uuid5, NAMESPACE_URL
+from typing import List
+from uuid import NAMESPACE_URL, uuid5
 
 from ollama import Client as OllamaClient
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 
 @dataclass
@@ -16,7 +22,7 @@ class Chunk:
     text: str
 
 
-def _split_text(text: str, chunk_size: int, overlap: int) -> List[str]:
+def split_text(text: str, *, chunk_size: int, overlap: int) -> List[str]:
     if not text.strip():
         return []
     if chunk_size <= 0:
@@ -40,77 +46,53 @@ def _split_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     return chunks
 
 
-def _read_documents(docs_dir: str) -> List[tuple[str, str]]:
-    root = Path(docs_dir)
-    if not root.exists():
-        return []
-
-    docs: List[tuple[str, str]] = []
-    for p in root.rglob("*"):
-        if not p.is_file():
-            continue
-        if p.suffix.lower() not in {".txt", ".md"}:
-            continue
-        content = p.read_text(encoding="utf-8", errors="ignore")
-        docs.append((str(p), content))
-    return docs
-
-
-def _embed(ollama_client: OllamaClient, model: str, text: str) -> List[float]:
-    response = ollama_client.embed(model=model, input=text)
+def embed_text(ollama_client: OllamaClient, embedding_model: str, text: str) -> List[float]:
+    response = ollama_client.embed(model=embedding_model, input=text)
     return response["embeddings"][0]
 
 
-def _iter_points(
-    docs: Iterable[tuple[str, str]],
-    *,
-    ollama_client: OllamaClient,
-    embedding_model: str,
-    chunk_size: int,
-    overlap: int,
-) -> Iterable[PointStruct]:
-    for source, text in docs:
-        for idx, part in enumerate(_split_text(text, chunk_size=chunk_size, overlap=overlap)):
-            point_id = str(uuid5(NAMESPACE_URL, f"{source}:{idx}"))
-            yield PointStruct(
-                id=point_id,
-                vector=_embed(ollama_client, embedding_model, part),
-                payload={
-                    "source": source,
-                    "text": part,
-                },
-            )
+def ensure_collection(qdrant_client: QdrantClient, collection_name: str, vector_size: int) -> None:
+    if qdrant_client.collection_exists(collection_name=collection_name):
+        return
+    qdrant_client.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+    )
 
 
-def build_index(
+def index_document(
     *,
     ollama_client: OllamaClient,
     qdrant_client: QdrantClient,
-    embedding_model: str,
-    docs_dir: str,
     collection_name: str,
+    embedding_model: str,
+    text: str,
+    source: str,
+    user_id: int,
+    document_id: int,
     chunk_size: int,
     overlap: int,
 ) -> int:
-    docs = _read_documents(docs_dir)
-    points = list(
-        _iter_points(
-            docs,
-            ollama_client=ollama_client,
-            embedding_model=embedding_model,
-            chunk_size=chunk_size,
-            overlap=overlap,
-        )
-    )
-    if not points:
+    chunks = split_text(text, chunk_size=chunk_size, overlap=overlap)
+    if not chunks:
         return 0
 
-    vector_size = len(points[0].vector)
-    if not qdrant_client.collection_exists(collection_name=collection_name):
-        qdrant_client.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+    first_vector = embed_text(ollama_client, embedding_model, chunks[0])
+    ensure_collection(qdrant_client, collection_name, len(first_vector))
+
+    points: List[PointStruct] = [
+        PointStruct(
+            id=str(uuid5(NAMESPACE_URL, f"{user_id}:{document_id}:{idx}")),
+            vector=(first_vector if idx == 0 else embed_text(ollama_client, embedding_model, chunk)),
+            payload={
+                "user_id": user_id,
+                "document_id": document_id,
+                "source": source,
+                "text": chunk,
+            },
         )
+        for idx, chunk in enumerate(chunks)
+    ]
     qdrant_client.upsert(collection_name=collection_name, points=points)
     return len(points)
 
@@ -123,23 +105,27 @@ def retrieve(
     collection_name: str,
     query: str,
     top_k: int,
+    user_id: int,
 ) -> List[Chunk]:
-    query_vector = _embed(ollama_client, embedding_model, query)
+    query_vector = embed_text(ollama_client, embedding_model, query)
     try:
         hits = qdrant_client.search(
             collection_name=collection_name,
             query_vector=query_vector,
+            query_filter=Filter(
+                must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+            ),
             limit=top_k,
             with_payload=True,
         )
     except Exception:
         return []
 
-    chunks: List[Chunk] = []
+    output: List[Chunk] = []
     for hit in hits:
         payload = hit.payload or {}
         text = payload.get("text")
         source = payload.get("source")
         if isinstance(text, str) and isinstance(source, str):
-            chunks.append(Chunk(source=source, text=text))
-    return chunks
+            output.append(Chunk(source=source, text=text))
+    return output

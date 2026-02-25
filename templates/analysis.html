@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raport {{ report_id }}</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Raport i analiza</h1>
+    <div>
+      <a class="small-btn" href="/dashboard">Dashboard</a>
+      <button id="logout" class="small-btn">Wyloguj</button>
+    </div>
+  </header>
+
+  <main class="analysis-layout">
+    <article class="card">
+      <h2>Szczegoly raportu</h2>
+      <p><strong>ID:</strong> {{ report_id }}</p>
+      <p><strong>Status:</strong> <span id="label"></span></p>
+      <p><strong>Data:</strong> <span id="created-at"></span></p>
+      <h3>Pytanie</h3>
+      <p id="question"></p>
+      <h3>Odpowiedz</h3>
+      <pre id="answer"></pre>
+      <h3>Zrodla</h3>
+      <ul id="sources"></ul>
+    </article>
+
+    <aside class="card">
+      <h2>Historia</h2>
+      <ul id="history-list"></ul>
+    </aside>
+  </main>
+
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) window.location.href = "/";
+
+    function authHeaders(extra = {}) {
+      return { ...extra, Authorization: `Bearer ${token}` };
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        ...options,
+        headers: authHeaders(options.headers || {}),
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        window.location.href = "/";
+      }
+      return { ok: res.ok, data };
+    }
+
+    async function loadReport() {
+      const out = await api(`/api/reports/{{ report_id }}`);
+      if (!out.ok) return;
+      const r = out.data;
+      document.getElementById("label").textContent = r.label;
+      document.getElementById("created-at").textContent = new Date(r.created_at).toLocaleString();
+      document.getElementById("question").textContent = r.question;
+      document.getElementById("answer").textContent = r.answer;
+      const srcList = document.getElementById("sources");
+      srcList.innerHTML = "";
+      (r.sources || []).forEach((s) => {
+        const li = document.createElement("li");
+        li.textContent = s;
+        srcList.appendChild(li);
+      });
+    }
+
+    async function loadHistory() {
+      const out = await api("/api/reports/history");
+      if (!out.ok) return;
+      const list = document.getElementById("history-list");
+      list.innerHTML = "";
+      out.data.forEach((r) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = `/analysis/${r.id}`;
+        a.textContent = `${r.question.slice(0, 70)} (${r.label})`;
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+    }
+
+    document.getElementById("logout").addEventListener("click", () => {
+      localStorage.removeItem("token");
+      window.location.href = "/";
+    });
+
+    Promise.all([loadReport(), loadHistory()]);
+  </script>
+</body>
+</html>

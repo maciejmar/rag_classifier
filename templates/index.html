@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG Classifier - Login</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="card">
+      <h1>RAG Classifier</h1>
+      <p>Logowanie i rejestracja dla aplikacji analitycznej.</p>
+      <div class="tabs">
+        <button id="tab-login" class="tab active">Logowanie</button>
+        <button id="tab-register" class="tab">Rejestracja</button>
+      </div>
+
+      <form id="login-form" class="form">
+        <label>Email<input type="email" name="email" required></label>
+        <label>Haslo<input type="password" name="password" required></label>
+        <button type="submit">Zaloguj</button>
+      </form>
+
+      <form id="register-form" class="form hidden">
+        <label>Email<input type="email" name="email" required></label>
+        <label>Haslo<input type="password" name="password" minlength="6" required></label>
+        <button type="submit">Utworz konto</button>
+      </form>
+      <p id="auth-message" class="message"></p>
+    </section>
+  </main>
+
+  <script>
+    const tabLogin = document.getElementById("tab-login");
+    const tabRegister = document.getElementById("tab-register");
+    const loginForm = document.getElementById("login-form");
+    const registerForm = document.getElementById("register-form");
+    const msg = document.getElementById("auth-message");
+
+    function showLogin() {
+      tabLogin.classList.add("active");
+      tabRegister.classList.remove("active");
+      loginForm.classList.remove("hidden");
+      registerForm.classList.add("hidden");
+      msg.textContent = "";
+    }
+
+    function showRegister() {
+      tabRegister.classList.add("active");
+      tabLogin.classList.remove("active");
+      registerForm.classList.remove("hidden");
+      loginForm.classList.add("hidden");
+      msg.textContent = "";
+    }
+
+    tabLogin.addEventListener("click", showLogin);
+    tabRegister.addEventListener("click", showRegister);
+
+    async function authSubmit(url, form) {
+      const body = {
+        email: form.email.value,
+        password: form.password.value,
+      };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        msg.textContent = data.detail || "Blad autoryzacji";
+        return;
+      }
+      localStorage.setItem("token", data.access_token);
+      window.location.href = "/dashboard";
+    }
+
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await authSubmit("/api/auth/login", loginForm);
+    });
+
+    registerForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await authSubmit("/api/auth/register", registerForm);
+    });
+  </script>
+</body>
+</html>

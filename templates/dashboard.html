@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard - RAG Classifier</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Dashboard</h1>
+    <div>
+      <span id="user-email"></span>
+      <button id="logout" class="small-btn">Wyloguj</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Dodaj dokumenty</h2>
+      <p>Obslugiwane: txt, md, pdf, xlsx.</p>
+      <form id="upload-form" class="form-inline">
+        <input type="file" id="doc-file" required>
+        <button type="submit">Wgraj</button>
+      </form>
+      <p id="upload-message" class="message"></p>
+      <ul id="docs-list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Nowa analiza / raport</h2>
+      <form id="ask-form">
+        <label>Pytanie
+          <textarea id="question" rows="5" placeholder="Napisz pytanie do dokumentow..." required></textarea>
+        </label>
+        <button type="submit">Generuj raport</button>
+      </form>
+      <p id="ask-message" class="message"></p>
+    </section>
+
+    <section class="card">
+      <h2>Historia raportow</h2>
+      <ul id="history-list"></ul>
+    </section>
+  </main>
+
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) {
+      window.location.href = "/";
+    }
+
+    function authHeaders(extra = {}) {
+      return { ...extra, Authorization: `Bearer ${token}` };
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, {
+        ...options,
+        headers: authHeaders(options.headers || {}),
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        window.location.href = "/";
+      }
+      return { ok: res.ok, data };
+    }
+
+    async function loadMe() {
+      const out = await api("/api/me");
+      if (out.ok) {
+        document.getElementById("user-email").textContent = out.data.email;
+      }
+    }
+
+    async function loadDocs() {
+      const out = await api("/api/documents");
+      const list = document.getElementById("docs-list");
+      list.innerHTML = "";
+      if (!out.ok) return;
+      out.data.forEach((d) => {
+        const li = document.createElement("li");
+        li.textContent = `${d.filename} (${new Date(d.uploaded_at).toLocaleString()})`;
+        list.appendChild(li);
+      });
+    }
+
+    async function loadHistory() {
+      const out = await api("/api/reports/history");
+      const list = document.getElementById("history-list");
+      list.innerHTML = "";
+      if (!out.ok) return;
+      out.data.forEach((r) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = `/analysis/${r.id}`;
+        a.textContent = `${r.question.slice(0, 70)} (${r.label})`;
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+    }
+
+    document.getElementById("upload-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("upload-message");
+      const fileInput = document.getElementById("doc-file");
+      if (!fileInput.files.length) return;
+      const fd = new FormData();
+      fd.append("file", fileInput.files[0]);
+      const out = await api("/api/documents/upload", { method: "POST", body: fd });
+      if (!out.ok) {
+        msg.textContent = out.data.detail || "Blad uploadu";
+        return;
+      }
+      msg.textContent = `Dodano ${out.data.filename}, chunki: ${out.data.chunks_indexed}`;
+      fileInput.value = "";
+      await loadDocs();
+    });
+
+    document.getElementById("ask-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("ask-message");
+      const question = document.getElementById("question").value.trim();
+      if (!question) return;
+      msg.textContent = "Generowanie...";
+      const out = await api("/api/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      if (!out.ok) {
+        msg.textContent = out.data.detail || "Blad generowania";
+        return;
+      }
+      window.location.href = `/analysis/${out.data.id}`;
+    });
+
+    document.getElementById("logout").addEventListener("click", () => {
+      localStorage.removeItem("token");
+      window.location.href = "/";
+    });
+
+    Promise.all([loadMe(), loadDocs(), loadHistory()]);
+  </script>
+</body>
+</html>
