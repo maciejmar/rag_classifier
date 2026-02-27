@@ -119,7 +119,24 @@ def retrieve(
             with_payload=True,
         )
     except Exception:
-        return []
+        hits = []
+
+    # Fallback for broad prompts ("zrob raport", "streszczenie"):
+    # if semantic search returns nothing, take recent user chunks.
+    if not hits:
+        try:
+            scrolled, _ = qdrant_client.scroll(
+                collection_name=collection_name,
+                scroll_filter=Filter(
+                    must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+                ),
+                limit=max(top_k, 8),
+                with_payload=True,
+                with_vectors=False,
+            )
+            hits = scrolled
+        except Exception:
+            return []
 
     output: List[Chunk] = []
     for hit in hits:

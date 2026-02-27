@@ -38,10 +38,13 @@ def retrieve_node(
 
 def generate_node(state: RAGState, *, ollama_client: OllamaClient) -> Dict[str, Any]:
     question = state["question"]
-    context = "\n\n".join(c.text for c in state.get("retrieved", []))
+    retrieved = state.get("retrieved", [])
+    context = "\n\n".join(c.text for c in retrieved)
+    if not context.strip():
+        return {"answer": "BRAK_DANYCH"}
     prompt = (
-        "Use only context from company documents. "
-        "If data is insufficient, answer exactly: BRAK_DANYCH.\n\n"
+        "Use only the provided context from company documents. "
+        "If the context is insufficient, answer exactly: BRAK_DANYCH (no extra text).\n\n"
         f"Pytanie: {question}\n\n"
         f"Kontekst:\n{context}"
     )
@@ -56,8 +59,10 @@ def generate_node(state: RAGState, *, ollama_client: OllamaClient) -> Dict[str, 
 
 
 def classify_node(state: RAGState) -> Dict[str, Any]:
-    answer = state.get("answer", "")
-    return {"label": "NO_ANSWER" if answer == "BRAK_DANYCH" else "ANSWERED"}
+    answer = (state.get("answer") or "").strip().upper()
+    has_context = bool(state.get("retrieved"))
+    no_answer = (not has_context) or ("BRAK_DANYCH" in answer)
+    return {"label": "NO_ANSWER" if no_answer else "ANSWERED"}
 
 
 def build_graph(*, ollama_client: OllamaClient, qdrant_client: QdrantClient):

@@ -57,7 +57,7 @@
     tabLogin.addEventListener("click", showLogin);
     tabRegister.addEventListener("click", showRegister);
 
-    async function authSubmit(url, form) {
+    async function authSubmit(url, form, mode) {
       const body = {
         email: form.email.value,
         password: form.password.value,
@@ -72,18 +72,24 @@
         msg.textContent = data.detail || "Blad autoryzacji";
         return;
       }
+      if (mode === "register") {
+        form.reset();
+        showLogin();
+        msg.textContent = "Success! Konto utworzone. Zaloguj sie.";
+        return;
+      }
       localStorage.setItem("token", data.access_token);
       window.location.href = "/dashboard";
     }
 
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await authSubmit("/api/auth/login", loginForm);
+      await authSubmit("/api/auth/login", loginForm, "login");
     });
 
     registerForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await authSubmit("/api/auth/register", registerForm);
+      await authSubmit("/api/auth/register", registerForm, "register");
     });
   </script>
 </body>

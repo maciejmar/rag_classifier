@@ -184,8 +184,16 @@ def generate_report(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    result = graph.invoke({"user_id": current_user.id, "question": payload.question})
+    try:
+        result = graph.invoke({"user_id": current_user.id, "question": payload.question})
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Generation error: {exc}. Upewnij sie, ze model Ollama '{settings.llm_model}' jest pobrany.",
+        )
     answer = result.get("answer", "BRAK_DANYCH")
+    if "BRAK_DANYCH" in answer.upper():
+        answer = "BRAK_DANYCH"
     label = result.get("label", "NO_ANSWER")
     sources = [c.source for c in result.get("retrieved", [])]
     unique_sources = list(dict.fromkeys(sources))

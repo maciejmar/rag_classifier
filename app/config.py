@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,7 +9,10 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-secret"
     access_token_expire_minutes: int = 60 * 24
 
-    database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/rag_classifier"
+    database_url: str = Field(
+        default="postgresql+psycopg2://postgres:postgres@localhost:5436/rag_classifier",
+        validation_alias=AliasChoices("APP_DATABASE_URL", "DATABASE_URL"),
+    )
 
     ollama_host: str = "http://localhost:11434"
     llm_model: str = "llama3.1:8b"
@@ -22,7 +28,7 @@ class Settings(BaseSettings):
     top_k: int = 4
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(Path(__file__).resolve().parent.parent / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

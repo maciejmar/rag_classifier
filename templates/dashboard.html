@@ -59,7 +59,13 @@
         ...options,
         headers: authHeaders(options.headers || {}),
       });
-      const data = await res.json();
+      let data;
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { detail: text || "Unexpected server response" };
+      }
       if (res.status === 401) {
         localStorage.removeItem("token");
         window.location.href = "/";
@@ -124,16 +130,20 @@
       const question = document.getElementById("question").value.trim();
       if (!question) return;
       msg.textContent = "Generowanie...";
-      const out = await api("/api/reports/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
-      if (!out.ok) {
-        msg.textContent = out.data.detail || "Blad generowania";
-        return;
+      try {
+        const out = await api("/api/reports/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+        if (!out.ok) {
+          msg.textContent = out.data.detail || "Blad generowania";
+          return;
+        }
+        window.location.href = `/analysis/${out.data.id}`;
+      } catch {
+        msg.textContent = "Blad polaczenia z serwerem";
       }
-      window.location.href = `/analysis/${out.data.id}`;
     });
 
     document.getElementById("logout").addEventListener("click", () => {
